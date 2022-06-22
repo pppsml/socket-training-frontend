@@ -1,55 +1,74 @@
 import React, { useRef, useState } from 'react';
+import { io, Socket } from 'socket.io-client';
 
 function App() {
-	const [userName, setUserName] = useState('');
+	const [username, setUsername] = useState('');
+	const [roomId, setRoomId] = useState('');
 	const [value, setValue] = useState('');
+
 	const [messages, setMessages] = useState<any[]>([]);
 	const [isConnected, setIsConnected] = useState<boolean>(false);
-	const socket = useRef<WebSocket>();
+	const socketRef = useRef<Socket>();
+
+	console.log(messages);
 
 	const connect = () => {
-		socket.current = new WebSocket('ws://localhost:7878');
-		const ws = socket.current;
+		socketRef.current = io('http://localhost:7878');
+		socketRef.current?.emit('ROOM:join', {
+			roomId,
+			username,
+		});
+		setIsConnected(true);
 
-		ws.onopen = () => {
-			setIsConnected(true);
-			const message = {
-				event: 'connection',
-				userName,
-				id: Date.now(),
-			};
-			ws.send(JSON.stringify(message));
-			console.log('ws connected');
-		};
-		ws.onmessage = (event) => {
-			const message = JSON.parse(event.data);
-			setMessages((prev) => [message, ...prev]);
-		};
-		ws.onclose = () => {
-			console.log('Socket закрыт');
-		};
-		ws.onerror = () => {
-			console.log('Socket ошибка');
-		};
+		socketRef.current?.on('ROOM:get_message', (data) => {
+			console.log(data);
+			setMessages((prev) => {
+				return [
+					...prev,
+					{
+						type: 'message',
+						username: data.username,
+						message: data.message,
+					},
+				];
+			});
+		});
+
+		socketRef.current?.on('ROOM:user_connected', (data) => {
+			console.log(data);
+			setMessages((prev) => {
+				return [
+					...prev,
+					{
+						type: 'connection',
+						username: data.username,
+					},
+				];
+			});
+		});
 	};
 
 	const sendMessage = () => {
-		const message = {
-			userName,
+		socketRef.current?.emit('ROOM:send_message', {
+			roomId,
+			username,
 			message: value,
-			event: 'message',
-			id: Date.now(),
-		};
-		socket.current?.send(JSON.stringify(message));
-		setValue('');
+		});
 	};
 
 	return (
 		<div className="App">
-			<header className="App-header">{userName}</header>
+			<header className="App-header">{username}</header>
 			{!isConnected ? (
 				<>
-					<input value={userName} onChange={(e) => setUserName(e.target.value)} />
+					<label>
+						roomid
+						<input value={roomId} onChange={(e) => setRoomId(e.target.value)} />
+					</label>
+					<label>
+						username
+						<input value={username} onChange={(e) => setUsername(e.target.value)} />
+					</label>
 					<button onClick={connect}>connect</button>
 				</>
 			) : (
@@ -59,12 +78,14 @@ function App() {
 				</>
 			)}
 			<div>
-				{messages.map((msg) =>
-					msg.event === 'connection' ? (
-						<div key={msg.id}>{msg.userName} подключился</div>
+				{messages.map((msg, index) =>
+					msg.type === 'connection' ? (
+						<div key={msg.type + msg.username + index} style={{ color: '#777' }}>
+							{msg.username} подключился
+						</div>
 					) : (
-						<div key={msg.id}>
-							{msg.userName}: {msg.message}
+						<div key={msg.type + msg.username + index}>
+							{msg.username}: {msg.message}
 						</div>
 					),
 				)}
